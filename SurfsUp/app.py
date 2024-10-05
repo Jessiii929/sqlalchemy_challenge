@@ -26,8 +26,8 @@ Base.prepare(engine, reflect=True)
 
 # Create our session (link) from Python to the DB
 
-Measurement = Base.classes.measurement
-Station = Base.classes.station
+measurement = Base.classes.get('measurement')
+Station = Base.classes.get('station')
 
 #################################################
 # Flask Setup
@@ -56,14 +56,29 @@ def welcome():
 def precipitation():
     """Return the precipitation data for the last 12 months."""
     session = Session(engine)
-    
-    # Query for the last 12 months of precipitation data
-    last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
-    last_date = dt.datetime.strptime(last_date, '%Y-%m-%d')
-    year_ago = last_date - dt.timedelta(days=365)
-    
-    precipitation_data = session.query(Measurement.date, Measurement.prcp).filter(Measurement.date >= year_ago).all()
+
+    # Query for the last date in the Measurement table
+    last_date_row = session.query(measurement.date).order_by(measurement.date.desc()).first()
+
+    # Print the result of the query for debugging
+    print(f"Last date query result: {last_date_row}")
+
+    if last_date_row:
+        # Unpack the first element of the tuple
+        last_date = last_date_row[0]
+        last_date = dt.datetime.strptime(last_date, '%Y-%m-%d')
+        year_ago = last_date - dt.timedelta(days=365)
+    else:
+        # If no data is found, return an appropriate message
+        return jsonify({"error": "No data found for dates"}), 404
+
+    # Query precipitation data for the last 12 months
+    precipitation_data = session.query(measurement.date, measurement.prcp).filter(measurement.date >= year_ago).all()
     session.close()
+
+    # Handle empty query result
+    if not precipitation_data:
+        return jsonify({"error": "No precipitation data available"}), 404
 
     # Convert the query results to a dictionary using `date` as the key and `prcp` as the value
     precipitation_dict = {date: prcp for date, prcp in precipitation_data}
@@ -90,18 +105,18 @@ def tobs():
     session = Session(engine)
     
     # Find the most active station
-    most_active_station = session.query(Measurement.station, func.count(Measurement.station)).\
-        group_by(Measurement.station).\
-        order_by(func.count(Measurement.station).desc()).first()[0]
+    most_active_station = session.query(measurement.station, func.count(measurement.station)).\
+        group_by(measurement.station).\
+        order_by(func.count(measurement.station).desc()).first()[0]
     
     # Query the temperature observations for the last year
-    last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
+    last_date = session.query(measurement.date).order_by(measurement.date.desc()).first()[0]
     last_date = dt.datetime.strptime(last_date, '%Y-%m-%d')
     year_ago = last_date - dt.timedelta(days=365)
     
-    tobs_data = session.query(Measurement.date, Measurement.tobs).\
-        filter(Measurement.station == most_active_station).\
-        filter(Measurement.date >= year_ago).all()
+    tobs_data = session.query(measurement.date, measurement.tobs).\
+        filter(measurement.station == most_active_station).\
+        filter(measurement.date >= year_ago).all()
     
     session.close()
 
@@ -118,13 +133,13 @@ def stats(start=None, end=None):
 
     if not end:
         # Calculate TMIN, TAVG, TMAX for dates >= start
-        results = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
-            filter(Measurement.date >= start).all()
+        results = session.query(func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
+            filter(measurement.date >= start).all()
     else:
         # Calculate TMIN, TAVG, TMAX for dates between start and end
-        results = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
-            filter(Measurement.date >= start).\
-            filter(Measurement.date <= end).all()
+        results = session.query(func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
+            filter(measurement.date >= start).\
+            filter(measurement.date <= end).all()
 
     session.close()
 
